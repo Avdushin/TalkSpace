@@ -10,13 +10,13 @@ pub async fn ws_connect(
     req: HttpRequest,
     stream: web::Payload,
     path: web::Path<(i32,)>,
-    data: web::Data<SharedState>,  // Правильная передача SharedState
+    data: web::Data<SharedState>,
 ) -> Result<HttpResponse, Error> {
     println!("Incoming WebSocket connection for channel: {}", path.0);
     let channel_id = path.into_inner().0;
     let ws_session = WsSession {
         channel_id,
-        state: data.get_ref().clone(),  // Клонирование shared state
+        state: data.get_ref().clone(),
     };
     
     match ws::start(ws_session, &req, stream) {
@@ -31,7 +31,6 @@ pub async fn ws_connect(
     }
 }
 
-// Делаем структуру публичной
 pub struct WsSession {
     channel_id: i32,
     state: SharedState,
@@ -63,17 +62,16 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(ws::Message::Text(text)) => {
-                // Преобразуем ByteString в String
                 let text_message = text.to_string();
                 
-                println!("Received message: {}", text_message); // Логируем сообщение
+                println!("Received message: {}", text_message);
 
                 // Пересылаем сообщение всем участникам канала, кроме отправителя
                 let state = self.state.lock().unwrap();
                 if let Some(sessions) = state.get(&self.channel_id) {
                     for session in sessions {
                         if session != &ctx.address() {
-                            session.do_send(Message(text_message.clone()));  // Пересылаем сообщение другим
+                            session.do_send(Message(text_message.clone()));
                         }
                     }
                 }
@@ -88,15 +86,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 //     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
 //         match msg {
 //             Ok(ws::Message::Text(text)) => {
-//                 // Преобразуем ByteString в String
 //                 let text_message = text.to_string();
 
-//                 // Пересылаем сообщение всем участникам канала, кроме отправителя
 //                 let state = self.state.lock().unwrap();
 //                 if let Some(sessions) = state.get(&self.channel_id) {
 //                     for session in sessions {
 //                         if session != &ctx.address() {
-//                             session.do_send(Message(text_message.clone()));  // Теперь передаем String
+//                             session.do_send(Message(text_message.clone()));
 //                         }
 //                     }
 //                 }

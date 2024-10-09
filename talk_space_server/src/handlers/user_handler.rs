@@ -17,7 +17,6 @@ pub async fn register_user(
     data: web::Json<RegisterUser>,
     pool: web::Data<PgPool>,
 ) -> impl Responder {
-    // Хешируем пароль
     let hashed_password = hash(&data.password, DEFAULT_COST).unwrap();
 
     let result = sqlx::query(
@@ -38,10 +37,8 @@ pub async fn login_user(
     data: web::Json<LoginUser>,
     pool: web::Data<PgPool>,
 ) -> impl Responder {
-    // Получаем JWT секретный ключ из переменных окружения
     let secret_key = env::var("JWT_SECRET_KEY").expect("JWT_SECRET_KEY must be set");
 
-    // Найдем пользователя в базе данных
     let user = sqlx::query!(
         "SELECT * FROM users WHERE username = $1",
         data.username
@@ -51,12 +48,11 @@ pub async fn login_user(
 
     match user {
         Ok(user) => {
-            // Проверяем правильность пароля
             if verify(&data.password, &user.password).unwrap() {
                 // Создаем JWT-токен
                 let claims = Claims {
                     sub: data.username.to_owned(),
-                    exp: 10000000000,  // Укажи время истечения токена
+                    exp: 10000000000,
                 };
 
                 let token = encode(
