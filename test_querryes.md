@@ -40,3 +40,9 @@ curl -X POST http://127.0.0.1:8080/voice_channel/leave \
 -H "Authorization: Bearer <your_jwt_token>" \
 -d '{"channel_id": 1, "user_id": 1}'
 ```
+
+## Web Sockets
+
+```bash
+ws://127.0.0.1:8080/ws/voice_channel/1
+```

@@ -24,7 +24,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(pool.clone()))
-            .configure(routes::configure_routes)
+            .configure(routes::configure_routes)  // Подключаем маршруты
     })
     .bind(bind_address)?
     .run()
