@@ -4,6 +4,7 @@ mod handlers;
 mod models;
 mod middleware;
 mod routes;
+mod cors;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -13,6 +14,7 @@ use db::init_db;
 use dotenv::dotenv;
 use std::env;
 use handlers::ws_handler::WsSession;
+use cors::configure_cors;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -25,14 +27,14 @@ async fn main() -> std::io::Result<()> {
 
     let bind_address = format!("{}:{}", server_address, server_port);
 
-    // Инициализация SharedState с указанием типов
     let shared_state = Arc::new(Mutex::new(HashMap::<i32, Vec<Addr<WsSession>>>::new()));
 
     HttpServer::new(move || {
         App::new()
+            .wrap(configure_cors())  // Используем настройки CORS из модуля
             .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(shared_state.clone()))  // Передаем SharedState в приложение
-            .configure(routes::configure_routes)  // Подключаем маршруты
+            .app_data(web::Data::new(shared_state.clone()))
+            .configure(routes::configure_routes)
     })
     .bind(bind_address)?
     .run()
