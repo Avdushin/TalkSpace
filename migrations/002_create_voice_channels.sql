@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS voice_channels (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE
+);
