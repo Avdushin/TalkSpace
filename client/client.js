@@ -2,7 +2,6 @@ let socket;
 let peerConnection;
 let localStream;
 let iceCandidateQueue = [];  // Очередь для ICE кандидатов, которые нужно добавить после установки remoteDescription
-let isWebSocketReady = false;
 
 const connectButton = document.getElementById('connect');
 const disconnectButton = document.getElementById('disconnect');
@@ -12,34 +11,43 @@ const connectionStatus = document.getElementById('connection-status');
 const micStatus = document.getElementById('mic-status');
 const participantList = document.getElementById('participant-list');
 
+// Функция отправки сообщения только если WebSocket соединение открыто
+function sendMessage(message) {
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(message);
+    } else {
+        console.error("WebSocket is not open. Cannot send message.");
+    }
+}
+
 // WebSocket инициализация и соединение
 function connectWebSocket() {
-    socket = new WebSocket('ws://localhost:8080/ws/voice_channel/1');  // URL WebSocket сервера
+    socket = new WebSocket('ws://127.0.0.1:8080/ws/voice_channel/1');  // URL WebSocket сервера
 
     socket.onopen = () => {
         console.log("Connected to WebSocket server");
         connectionStatus.innerText = 'Connected';  // Обновляем статус
-        isWebSocketReady = true;
-        initializeWebRTC();  // Инициализируем WebRTC только после установления WebSocket соединения
-
-        // Если есть кандидаты в очереди, отправляем их
-        iceCandidateQueue.forEach(candidate => {
-            socket.send(JSON.stringify({ type: 'ice', candidate }));
-        });
-        iceCandidateQueue = [];  // Очищаем очередь
+        initializeWebRTC();
     };
 
     socket.onmessage = (event) => {
         const message = JSON.parse(event.data);
-    
+
         // Обработка сообщения offer
         if (message.type === 'offer') {
+            // Проверка состояния перед установкой offer
             if (peerConnection.signalingState === 'stable') {
                 peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
                 .then(() => peerConnection.createAnswer())
                 .then((answer) => peerConnection.setLocalDescription(answer))
+                .then(() => sendMessage(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription })))
                 .then(() => {
-                    socket.send(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription }));
+                    // Теперь можно добавить ICE кандидаты, которые были получены до установки remoteDescription
+                    iceCandidateQueue.forEach(candidate => {
+                        peerConnection.addIceCandidate(candidate)
+                        .catch(error => console.error("Error adding queued ICE candidate:", error));
+                    });
+                    iceCandidateQueue = [];  // Очищаем очередь
                 })
                 .catch(error => console.error("Error during answer creation:", error));
             } else {
@@ -63,7 +71,6 @@ function connectWebSocket() {
                 peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate))
                 .catch(error => console.error("Error adding received ICE candidate:", error));
             } else {
-                // Если remoteDescription еще не установлено, сохраняем ICE кандидаты в очередь
                 iceCandidateQueue.push(new RTCIceCandidate(message.candidate));
             }
         }
@@ -77,7 +84,12 @@ function connectWebSocket() {
     socket.onclose = () => {
         console.log("WebSocket connection closed");
         connectionStatus.innerText = 'Disconnected';  // Обновляем статус
-        isWebSocketReady = false;
+
+        // Попробовать подключиться снова через 3 секунды
+        setTimeout(() => {
+            console.log("Attempting to reconnect...");
+            connectWebSocket();  // Повторное подключение
+        }, 3000);
     };
 
     socket.onerror = (error) => {
@@ -92,12 +104,7 @@ function initializeWebRTC() {
     // Обработка ICE кандидатов
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-            if (isWebSocketReady) {
-                socket.send(JSON.stringify({ type: 'ice', candidate: event.candidate }));
-            } else {
-                // Если WebSocket ещё не готов, сохраняем ICE кандидаты в очередь
-                iceCandidateQueue.push(event.candidate);
-            }
+            sendMessage(JSON.stringify({ type: 'ice', candidate: event.candidate }));
         }
     };
 
@@ -123,9 +130,7 @@ function initializeWebRTC() {
             if (peerConnection.signalingState === 'stable') {
                 peerConnection.createOffer().then((offer) => {
                     peerConnection.setLocalDescription(offer);
-                    if (isWebSocketReady) {
-                        socket.send(JSON.stringify({ type: 'offer', sdp: offer }));
-                    }
+                    sendMessage(JSON.stringify({ type: 'offer', sdp: offer }));
                 });
             }
         })
