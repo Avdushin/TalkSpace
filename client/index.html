@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Voice Channel</title>
+</head>
+<body>
+    <h1>WebRTC Voice Channel</h1>
+
+    <div id="status">
+        <p><strong>Status:</strong> <span id="connection-status">Not connected</span></p>
+        <p><strong>Microphone:</strong> <span id="mic-status">Not muted</span></p>
+    </div>
+
+    <div id="participants">
+        <h3>Participants:</h3>
+        <ul id="participant-list">
+            <!-- Список участников будет добавлен динамически -->
+        </ul>
+    </div>
+
+    <button id="connect">Connect to Voice Channel</button>
+    <button id="disconnect">Disconnect from Voice Channel</button>
+    <button id="mute">Mute</button>
+    <button id="unmute">Unmute</button>
+
+    <script src="client.js"></script>
+</body>
+</html>
