@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { getToken, logout } from '../auth';
+import { host } from '../vars';
 
 const VoiceChannel: React.FC = () => {
     const [participants, setParticipants] = useState<string[]>([]);
@@ -37,12 +38,12 @@ const VoiceChannel: React.FC = () => {
         const token = getToken();
         if (!token) return;
 
-        socket.current = new WebSocket(`ws://127.0.0.1:8080/ws/voice_channel/1?token=${token}`);
+        socket.current = new WebSocket(`${host}/ws/voice_channel/1?token=${token}`);
 
         socket.current.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'participant_list') {
-                setParticipants(data.participants);  // Обновляем список участников
+                setParticipants(data.participants);
             }
         };
 
