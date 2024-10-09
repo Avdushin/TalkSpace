@@ -18,7 +18,7 @@ mv .env.example .env
 cargo run
 ```
 ## API TEST QUERRYES
-[API QUERRYES LIST](./test_querryes.md)
+[API QUERRYES LIST](./talk_space_server/test_querryes.md)
 
 ### Client
 ```bash
