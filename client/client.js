@@ -1,7 +1,7 @@
 let socket;
 let peerConnection;
 let localStream;
-let iceCandidateQueue = [];  // Очередь для ICE кандидатов, которые нужно добавить после установки remoteDescription
+let iceCandidateQueue = []; // Очередь для ICE кандидатов, которые нужно добавить после установки remoteDescription
 
 const connectButton = document.getElementById('connect');
 const disconnectButton = document.getElementById('disconnect');
@@ -10,6 +10,57 @@ const unmuteButton = document.getElementById('unmute');
 const connectionStatus = document.getElementById('connection-status');
 const micStatus = document.getElementById('mic-status');
 const participantList = document.getElementById('participant-list');
+const audioInputSelect = document.getElementById('audioInputSelect');
+const audioOutputSelect = document.getElementById('audioOutputSelect');
+
+let selectedAudioInput = null;
+let selectedAudioOutput = null;
+
+// Перечисляем устройства ввода и вывода звука
+navigator.mediaDevices.enumerateDevices().then(devices => {
+    devices.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.text = device.label || `${device.kind} ${device.deviceId}`;
+        if (device.kind === 'audioinput') {
+            audioInputSelect.appendChild(option);
+        } else if (device.kind === 'audiooutput') {
+            audioOutputSelect.appendChild(option);
+        }
+    });
+});
+
+// Изменение выбранного микрофона
+audioInputSelect.onchange = () => {
+    selectedAudioInput = audioInputSelect.value;
+    getUserMediaWithConstraints();
+};
+
+// Изменение выбранного динамика
+audioOutputSelect.onchange = () => {
+    selectedAudioOutput = audioOutputSelect.value;
+    // Здесь мы можем назначить динамик для аудиоэлементов
+    const audioElements = document.querySelectorAll('audio');
+    audioElements.forEach(audio => {
+        if (typeof audio.setSinkId !== 'undefined') {
+            audio.setSinkId(selectedAudioOutput)
+                .then(() => console.log(`Success, audio output device attached: ${selectedAudioOutput}`))
+                .catch(error => console.error('Error attaching audio output device: ', error));
+        }
+    });
+};
+
+// Получение медиа с выбранным микрофоном
+function getUserMediaWithConstraints() {
+    const audioConstraints = selectedAudioInput ? { deviceId: { exact: selectedAudioInput } } : true;
+    navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
+        .then(stream => {
+            localStream = stream;
+            peerConnection.addTrack(localStream.getAudioTracks()[0], localStream);
+            console.log('Got stream with constraints:', audioConstraints);
+        })
+        .catch(error => console.error('Error accessing media devices:', error));
+}
 
 // Функция отправки сообщения только если WebSocket соединение открыто
 function sendMessage(message) {
@@ -22,11 +73,11 @@ function sendMessage(message) {
 
 // WebSocket инициализация и соединение
 function connectWebSocket() {
-    socket = new WebSocket('ws://127.0.0.1:8080/ws/voice_channel/1');  // URL WebSocket сервера
+    socket = new WebSocket('ws://127.0.0.1:8080/ws/voice_channel/1'); // URL WebSocket сервера
 
     socket.onopen = () => {
         console.log("Connected to WebSocket server");
-        connectionStatus.innerText = 'Connected';  // Обновляем статус
+        connectionStatus.innerText = 'Connected'; // Обновляем статус
         initializeWebRTC();
     };
 
@@ -35,21 +86,19 @@ function connectWebSocket() {
 
         // Обработка сообщения offer
         if (message.type === 'offer') {
-            // Проверка состояния перед установкой offer
             if (peerConnection.signalingState === 'stable') {
                 peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
-                .then(() => peerConnection.createAnswer())
-                .then((answer) => peerConnection.setLocalDescription(answer))
-                .then(() => sendMessage(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription })))
-                .then(() => {
-                    // Теперь можно добавить ICE кандидаты, которые были получены до установки remoteDescription
-                    iceCandidateQueue.forEach(candidate => {
-                        peerConnection.addIceCandidate(candidate)
-                        .catch(error => console.error("Error adding queued ICE candidate:", error));
-                    });
-                    iceCandidateQueue = [];  // Очищаем очередь
-                })
-                .catch(error => console.error("Error during answer creation:", error));
+                    .then(() => peerConnection.createAnswer())
+                    .then((answer) => peerConnection.setLocalDescription(answer))
+                    .then(() => sendMessage(JSON.stringify({ type: 'answer', sdp: peerConnection.localDescription })))
+                    .then(() => {
+                        iceCandidateQueue.forEach(candidate => {
+                            peerConnection.addIceCandidate(candidate)
+                                .catch(error => console.error("Error adding queued ICE candidate:", error));
+                        });
+                        iceCandidateQueue = []; // Очищаем очередь
+                    })
+                    .catch(error => console.error("Error during answer creation:", error));
             } else {
                 console.warn("Cannot set offer, invalid signaling state:", peerConnection.signalingState);
             }
@@ -59,7 +108,7 @@ function connectWebSocket() {
         if (message.type === 'answer') {
             if (peerConnection.signalingState === 'have-local-offer') {
                 peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp))
-                .catch(error => console.error("Error setting remote description for answer:", error));
+                    .catch(error => console.error("Error setting remote description for answer:", error));
             } else {
                 console.warn("Cannot set answer, invalid signaling state:", peerConnection.signalingState);
             }
@@ -69,26 +118,25 @@ function connectWebSocket() {
         if (message.type === 'ice') {
             if (peerConnection.remoteDescription) {
                 peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate))
-                .catch(error => console.error("Error adding received ICE candidate:", error));
+                    .catch(error => console.error("Error adding received ICE candidate:", error));
             } else {
                 iceCandidateQueue.push(new RTCIceCandidate(message.candidate));
             }
         }
 
         // Обработка события подключения нового участника
-        if (message.type === 'participant') {
-            addParticipantToList(message.name);  // Добавляем участника в список
+        if (message.type === 'participant_list') {
+            updateParticipantList(message.participants);
         }
     };
 
     socket.onclose = () => {
         console.log("WebSocket connection closed");
-        connectionStatus.innerText = 'Disconnected';  // Обновляем статус
+        connectionStatus.innerText = 'Disconnected'; // Обновляем статус
 
-        // Попробовать подключиться снова через 3 секунды
         setTimeout(() => {
             console.log("Attempting to reconnect...");
-            connectWebSocket();  // Повторное подключение
+            connectWebSocket(); // Повторное подключение
         }, 3000);
     };
 
@@ -113,28 +161,19 @@ function initializeWebRTC() {
         const [remoteStream] = event.streams;
         console.log("Received remote stream:", remoteStream);
 
-        // Создаём элемент audio для воспроизведения звука
         const audioElement = document.createElement('audio');
         audioElement.srcObject = remoteStream;
         audioElement.autoplay = true;
-        document.body.appendChild(audioElement);  // Добавляем элемент на страницу
+        document.body.appendChild(audioElement);
+
+        if (selectedAudioOutput) {
+            audioElement.setSinkId(selectedAudioOutput)
+                .then(() => console.log(`Set audio output to: ${selectedAudioOutput}`))
+                .catch(err => console.error('Error setting audio output device: ', err));
+        }
     };
 
-    // Получение аудио потока
-    navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-            localStream = stream;
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-            // Создание предложения только если соединение в состоянии 'stable'
-            if (peerConnection.signalingState === 'stable') {
-                peerConnection.createOffer().then((offer) => {
-                    peerConnection.setLocalDescription(offer);
-                    sendMessage(JSON.stringify({ type: 'offer', sdp: offer }));
-                });
-            }
-        })
-        .catch(error => console.error('Error accessing microphone:', error));
+    getUserMediaWithConstraints();
 }
 
 // Управление микрофоном
@@ -145,7 +184,7 @@ muteButton.addEventListener('click', () => {
                 track.enabled = false;
             }
         });
-        micStatus.innerText = 'Muted';  // Обновляем статус микрофона
+        micStatus.innerText = 'Muted'; // Обновляем статус микрофона
     } else {
         console.error("No local stream found to mute.");
     }
@@ -158,7 +197,7 @@ unmuteButton.addEventListener('click', () => {
                 track.enabled = true;
             }
         });
-        micStatus.innerText = 'Not muted';  // Обновляем статус микрофона
+        micStatus.innerText = 'Not muted'; // Обновляем статус микрофона
     } else {
         console.error("No local stream found to unmute.");
     }
@@ -178,12 +217,15 @@ disconnectButton.addEventListener('click', () => {
         socket.close();
     }
     console.log("Disconnected from voice channel");
-    connectionStatus.innerText = 'Disconnected';  // Обновляем статус
+    connectionStatus.innerText = 'Disconnected'; // Обновляем статус
 });
 
-// Функция для добавления участника в список
-function addParticipantToList(name) {
-    const li = document.createElement('li');
-    li.innerText = name;
-    participantList.appendChild(li);
+// Функция для обновления списка участников
+function updateParticipantList(participants) {
+    participantList.innerHTML = ''; // Очищаем список
+    participants.forEach(participant => {
+        const li = document.createElement('li');
+        li.innerText = participant;
+        participantList.appendChild(li);
+    });
 }
